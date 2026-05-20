@@ -64,35 +64,31 @@ Codex/gemini take 3–8 minutes at flagship effort; the Claude specialists usual
 
 #### Codex (GPT-5.5, xhigh effort)
 
-Codex's `review` subcommand is purpose-built for this. It already loads the diff itself when given `--uncommitted` / `--base` / `--commit`. The user's `~/.codex/config.toml` already pins `model = "gpt-5.5"` and `model_reasoning_effort = "xhigh"`, so no override is needed — but pass them explicitly anyway so the skill is robust to config drift:
+Codex's `review` subcommand writes a structured report with severity tags. **Always use it in prompt-mode** so Codex sees the same intent (PR description, project conventions, out-of-scope items) that Gemini and the four Claude specialists get from `context.md`. Without intent, Codex misses entire classes of "implementation diverges from stated rule" findings — verified empirically: in an A/B test on the same diff, prompt-mode caught 3 P1s (including a stated-rule violation) that no-prompt mode could not surface.
+
+**Important CLI constraint**: `--base/--commit/--uncommitted` are **mutually exclusive** with `[PROMPT]`. The CLI rejects the combo with `error: the argument '--base <BRANCH>' cannot be used with '[PROMPT]'`. So when you want intent, inline the diff into the prompt yourself and drop the scope flag:
 
 ```bash
 codex review \
-  --uncommitted \
+  --title "<commit subject or scope label>" \
   -c model="gpt-5.5" \
   -c model_reasoning_effort="xhigh" \
-  > "$WS/codex.out" 2> "$WS/codex.err" &
-CODEX_PID=$!
-```
-
-Replace `--uncommitted` with `--base main`, `--commit <sha>`, or pipe the diff via stdin to a custom prompt:
-
-```bash
-codex exec \
-  -c model="gpt-5.5" \
-  -c model_reasoning_effort="xhigh" \
-  --skip-git-repo-check \
   - <<EOF > "$WS/codex.out" 2> "$WS/codex.err" &
-You are a senior reviewer. Review the following diff for correctness,
-security, performance, SOLID violations, and project-convention drift.
-Cite file:line. Categorize each finding P0/P1/P2/P3. Diff:
+$(cat "$WS/context.md")
 
+When reviewing, focus on whether the diff actually accomplishes its stated intent above. Severity-tag (P0–P3) as usual. Call out where the implementation diverges from what the description claims, AND respect any out-of-scope items the description says are deliberately deferred (don't re-flag those).
+
+Diff:
 $(cat "$WS/changes.diff")
 EOF
 CODEX_PID=$!
 ```
 
-Prefer `codex review` when the scope maps cleanly to its flags — it writes a structured report with severity tags. Fall back to `codex exec` only for custom prompts or when reviewing a diff outside the current repo.
+The structured P0/P1/P2/P3 output behavior is preserved when you use `[PROMPT]` — you don't lose the review template, you augment it.
+
+**When prompt-mode is impractical**: if the diff is so large that inlining it would blow Codex's context window (rare — a few thousand lines fits), fall back to flag-only mode (`codex review --base main ...`) and accept that Codex will be intent-blind. Flag that limitation in the synthesis so the user knows the council was uneven.
+
+**Do not use `codex exec`** for code review — `codex review` with a prompt gives you the same custom-prompt flexibility AND the structured severity-tagged output. `codex exec` is a generic agent runner and produces unstructured prose.
 
 #### Gemini (Gemini 3.1 Pro Preview)
 
@@ -275,16 +271,18 @@ If the user invokes the skill on a trivial change, say so and offer the lighter 
 ## Quick reference — verified commands
 
 ```bash
-# Codex review (uses ~/.codex/config.toml defaults: gpt-5.5 + xhigh)
-codex review --uncommitted
-codex review --base main
-codex review --commit <sha>
+# Codex review — prompt-mode (preferred: passes intent)
+# Note: --base/--commit/--uncommitted are mutually exclusive with [PROMPT].
+# Inline the diff in the prompt and drop the scope flag.
+codex review \
+  --title "<commit subject>" \
+  -c model="gpt-5.5" -c model_reasoning_effort="xhigh" \
+  - <<<"$CONTEXT_AND_DIFF"
 
-# Codex with explicit overrides (robust to config drift)
+# Codex review — flag-only mode (fallback for huge diffs; loses intent)
+codex review --base main -c model="gpt-5.5" -c model_reasoning_effort="xhigh"
 codex review --uncommitted -c model="gpt-5.5" -c model_reasoning_effort="xhigh"
-
-# Codex custom prompt with diff via stdin
-codex exec -c model="gpt-5.5" -c model_reasoning_effort="xhigh" - <<<"$PROMPT_AND_DIFF"
+codex review --commit <sha> -c model="gpt-5.5" -c model_reasoning_effort="xhigh"
 
 # Codex follow-up (verified syntax)
 codex exec resume --last "<prompt>"

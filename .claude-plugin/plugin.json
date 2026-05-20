@@ -1,0 +1,18 @@
+{
+  "name": "review-council",
+  "version": "1.0.0",
+  "description": "Multi-agent code review for Claude Code — parallel review by Codex (GPT-5.5), Gemini 3.1 Pro, and four Claude specialist subagents, then verified synthesis.",
+  "author": { "name": "Chowdhury Yeameen" },
+  "homepage": "https://github.com/yeameen/claude-code-review-council",
+  "license": "MIT",
+  "keywords": [
+    "multi-agent",
+    "code-review",
+    "ai-code-review",
+    "claude-code",
+    "claude-plugin",
+    "llm-code-review",
+    "codex",
+    "gemini"
+  ]
+}

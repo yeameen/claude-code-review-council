@@ -40,14 +40,14 @@ A synthesized report with:
 
 The skill orchestrates six reviewers and a synthesis pass from a single Claude Code session:
 
-**1. Build a workspace.** Saves the diff to `/tmp/review-council-<timestamp>/changes.diff` so every reviewer sees identical input.
+**1. Build a workspace.** Saves the diff and a short `context.md` (scope, stated intent from PR description / commit messages, project conventions, out-of-scope items) to `/tmp/review-council-<timestamp>/`. All six reviewers see the same intent — not just the diff. This catches "implementation diverges from stated rule" findings that no-intent reviews miss.
 
 **2. Launch six reviewers in parallel.** All started in the same turn, so wall-time is bounded by the slowest, not the sum:
 
 | Reviewer | How it runs |
 |---|---|
-| **Codex CLI** (GPT-5.5 `xhigh`) | Backgrounded shell subprocess: `codex review --base main -c model=gpt-5.5 -c model_reasoning_effort=xhigh` |
-| **Gemini CLI** (Gemini 3.1 Pro) | Backgrounded shell subprocess: `gemini -m gemini-3.1-pro-preview --yolo -p "<prompt+diff>"` |
+| **Codex CLI** (GPT-5.5 `xhigh`) | Backgrounded shell subprocess: `codex review --title "..." - <<<"$context+diff"` (prompt-mode — passes intent alongside the diff) |
+| **Gemini CLI** (Gemini 3.1 Pro) | Backgrounded shell subprocess: `gemini -m gemini-3.1-pro-preview --yolo -p "$context+diff"` |
 | **4 Claude specialists** | Spawned in parallel via Claude Code's `Agent` tool, one per axis (security / performance / logic / regression), each with a focused single-axis prompt and told to ignore findings outside its lane |
 
 Each reviewer writes its report into the shared workspace dir.

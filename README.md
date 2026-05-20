@@ -36,6 +36,40 @@ A synthesized report with:
 - **False positives** dismissed with a one-line reason
 - **Proposed actions** — wait for your approval before any code changes
 
+## How it works
+
+The skill orchestrates six reviewers and a synthesis pass from a single Claude Code session:
+
+**1. Build a workspace.** Saves the diff to `/tmp/review-council-<timestamp>/changes.diff` so every reviewer sees identical input.
+
+**2. Launch six reviewers in parallel.** All started in the same turn, so wall-time is bounded by the slowest, not the sum:
+
+| Reviewer | How it runs |
+|---|---|
+| **Codex CLI** (GPT-5.5 `xhigh`) | Backgrounded shell subprocess: `codex review --base main -c model=gpt-5.5 -c model_reasoning_effort=xhigh` |
+| **Gemini CLI** (Gemini 3.1 Pro) | Backgrounded shell subprocess: `gemini -m gemini-3.1-pro-preview --yolo -p "<prompt+diff>"` |
+| **4 Claude specialists** | Spawned in parallel via Claude Code's `Agent` tool, one per axis (security / performance / logic / regression), each with a focused single-axis prompt and told to ignore findings outside its lane |
+
+Each reviewer writes its report into the shared workspace dir.
+
+**3. Synthesize.** Once all six reports land, the orchestrator:
+- Deduplicates findings across all six streams
+- **Verifies each citation by opening the file** — reviewers occasionally hallucinate `file:line` refs, so unverified ones get dropped
+- Re-rates severity against what's actually in the code (a "P0" that's really a style nit gets downgraded; a "P3" that's a real race condition gets upgraded)
+- Tags each finding with which reviewers flagged it — multiple independent flags = high confidence
+- Surfaces disagreements explicitly when one reviewer said "fine" and another said "block"
+
+**4. Push back when needed.** If a finding looks suspicious, the orchestrator can resume the relevant reviewer mid-flight rather than just dismissing it:
+- Codex: `codex exec resume --last "you flagged X, but the code does Y — defend or retract"`
+- Gemini: `gemini -r latest -p "<counter-evidence>"`
+- Claude specialists: re-spawned with the disputed finding + counter-evidence
+
+The full exchange is saved to the workspace for audit.
+
+**5. Report and wait.** Presents a unified P0–P3 report with proposed actions. **No code changes until you approve.** Then applies fixes and re-runs your project's tests if cheap.
+
+**Degradation:** If Codex or Gemini fails (quota errors, empty output, network issue), the skill notes it in the report and synthesizes from whatever did run. The four Claude specialists are reliable enough to carry a review on their own.
+
 ## Why six reviewers?
 
 Single-model reviews — even at flagship effort — have predictable blindspots:
